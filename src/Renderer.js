@@ -78,6 +78,186 @@ html2canvas.prototype.Renderer = function(queue){
 }
 
 
+
+
+
+
+
+html2canvas.Renderer = function(parseQueue, opts){
+
+
+    var options = {
+        "width": 0,
+        "height": 0  
+    };
+
+    var queue = [];
+
+    function sortZ(zStack){
+        var subStacks = [];
+        var stackValues = [],
+        zStackChildren = zStack.children;
+        // var _ = this;
+
+        for (var s = 0, zLen = zStackChildren.length, stackChild; s < zLen; s++){
+            
+            stackChild = zStackChildren[s];
+            
+            if (stackChild.children && stackChild.children.length > 0){
+                subStacks.push(stackChild);
+                stackValues.push(stackChild.zindex);
+            }else{         
+                queue.push(stackChild);
+            }  
+           
+        }
+      
+        stackValues.sort(function(a,b){
+            return a - b
+        });
+    
+        for (var i = 0, stackLen = stackValues.length, zValue; i < stackLen; i++){
+            zValue = stackValues[i];
+            for (var b = 0, subStackLen = subStacks.length; b <= subStackLen; b++){
+                
+                if (subStacks[b].zindex === zValue){
+                    stackChild = subStacks.splice(b, 1);
+                    sortZ(stackChild[0]);
+                    break;
+                  
+                }
+            }        
+        }
+  
+    }
+
+    function canvasRenderer(zStack){
+ 
+        sortZ(zStack.zIndex);
+        
+
+        canvas.width = Math.max($(document).width(), options.width);   
+        canvas.height = Math.max($(document).height(), options.height);
+    
+        var ctx = canvas.getContext("2d"),
+        storageContext;
+        
+          
+        for (var i = 0, queueLen = queue.length; i < queueLen; i++){
+            
+            storageContext = queue.splice(0,1)[0];
+            storageContext.canvasPosition = storageContext.canvasPosition || {};   
+           
+            //this.canvasRenderContext(storageContext,parentctx);           
+
+            // set common settings for canvas
+            ctx.textBaseline = "bottom";
+   
+            if (storageContext.clip){
+                ctx.save();
+                ctx.beginPath();
+                // console.log(storageContext);
+                ctx.rect(storageContext.clip.left, storageContext.clip.top, storageContext.clip.width, storageContext.clip.height);
+                ctx.clip();
+        
+            }
+        
+            if (storageContext.ctx.storage){
+               
+                for (var a = 0, storageLen = storageContext.ctx.storage.length, renderItem; a < storageLen; a++){
+                    
+                    renderItem = storageContext.ctx.storage[a];
+                    
+                   
+                    
+                    switch(renderItem.type){
+                        case "variable":
+                            ctx[renderItem.name] = renderItem.arguments;              
+                            break;
+                        case "function":
+                            if (renderItem.name=="fillRect"){
+                        
+                                ctx.fillRect(
+                                    renderItem.arguments[0],
+                                    renderItem.arguments[1],
+                                    renderItem.arguments[2],
+                                    renderItem.arguments[3]
+                                    );
+                            }else if(renderItem.name=="fillText"){
+                                // console.log(renderItem.arguments[0]);
+                                ctx.fillText(renderItem.arguments[0],renderItem.arguments[1],renderItem.arguments[2]);
+                    
+                            }else if(renderItem.name=="drawImage"){
+                                //  console.log(renderItem);
+                                // console.log(renderItem.arguments[0].width);    
+                                if (renderItem.arguments[8] > 0 && renderItem.arguments[7]){
+                                    ctx.drawImage(
+                                        renderItem.arguments[0],
+                                        renderItem.arguments[1],
+                                        renderItem.arguments[2],
+                                        renderItem.arguments[3],
+                                        renderItem.arguments[4],
+                                        renderItem.arguments[5],
+                                        renderItem.arguments[6],
+                                        renderItem.arguments[7],
+                                        renderItem.arguments[8]
+                                        );
+                                }      
+                            }else{
+                                _.log(renderItem);
+                            }
+                       
+  
+                            break;
+                        default:
+                               
+                    }
+            
+                }
+
+            }  
+            if (storageContext.clip){
+                ctx.restore();
+            }
+    
+
+       
+   
+        }
+        
+        // this.canvasRenderStorage(queue,this.ctx);
+        return canvas;
+    }
+
+
+    var renderer = "canvas";
+    //this.each(this.opts.renderOrder.split(" "),function(i,renderer){
+        
+    switch(renderer){
+        case "canvas":
+            var canvas = document.createElement('canvas');
+            if (canvas.getContext){
+                return canvasRenderer(parseQueue);
+            //  _.log('Using canvas renderer');
+
+            }               
+            break;
+
+             
+    }
+         
+         
+         
+    //});
+
+    return this;
+     
+
+    
+}
+
+
+
 html2canvas.prototype.throttler = function(queue){
     
     

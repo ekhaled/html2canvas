@@ -93,7 +93,7 @@ function html2canvas(el, userOptions) {
    
     
     // Start script
-    this.init();
+    //this.init();
     
     return this;
 }
@@ -147,8 +147,8 @@ html2canvas.prototype.start = function(){
     if (this.images.length == 0 || this.imagesLoaded==this.images.length/2){    
         
         this.log('Finished loading '+this.imagesLoaded+' images, Started parsing');
-          this.bodyOverflow = document.getElementsByTagName('body')[0].style.overflow;
-           document.getElementsByTagName('body')[0].style.overflow = "hidden";
+        this.bodyOverflow = document.getElementsByTagName('body')[0].style.overflow;
+        document.getElementsByTagName('body')[0].style.overflow = "hidden";
         var rootStack = new this.storageContext($(document).width(),$(document).height());  
         rootStack.opacity = this.getCSS(this.element,"opacity");
         var stack = this.newElement(this.element,rootStack);

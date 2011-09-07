@@ -183,6 +183,9 @@ html2canvas.prototype.newElement = function(el,parentStack){
 
 
 
+html2canvas.Draw = function(){
+    
+};
 
 
 

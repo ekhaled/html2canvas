@@ -12,6 +12,7 @@ html2canvas.prototype.parseElement = function(element,stack){
 }
 
 
+
         
 html2canvas.prototype.parsing = function(el,stack){
    

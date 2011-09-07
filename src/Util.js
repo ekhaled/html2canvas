@@ -6,7 +6,16 @@ html2canvas.prototype.log = function(a){
         this.opts.logger(a);
 
     }
-}                    
+}     
+
+html2canvas.logging = true;
+
+html2canvas.log = function(a){    
+    if (html2canvas.logging){    
+        console.log(a);
+    }
+}    
+
 
 html2canvas.prototype.withinBounds = function(src,dst){
     if (!src) return true;
@@ -129,7 +138,7 @@ html2canvas.prototype.leadingZero = function(num,size){
     var s = "000000000" + num;
     return s.substr(s.length-size);    
 }    
-*/
+ */
 
 html2canvas.prototype.zContext = function(zindex){
     return {
@@ -171,7 +180,7 @@ html2canvas.prototype.sortZ = function(zStack){
         }else{         
           
 
-                _.queue.push(stackChild);
+            _.queue.push(stackChild);
 
         }
         
@@ -182,7 +191,7 @@ html2canvas.prototype.sortZ = function(zStack){
 
     stackValues.sort(function(a,b){
         return a - b
-        });
+    });
     
     this.each(stackValues, function(i,zValue){
         for (var s = 0;s<=subStacks.length;s++){
@@ -235,7 +244,7 @@ html2canvas.prototype.formatZ = function(zindex,position,parentZ,parentNode){
     
     
 }
-    */
+ */
     
     
     
@@ -248,6 +257,44 @@ html2canvas.prototype.getContents = function(el){
     el.contentDocument || el.contentWindow.document :
     el.childNodes;
 }
+
+html2canvas.Util = {};
+
+html2canvas.Util.backgroundImage = function(src){
+  
+    if (src.substr(0,5) === 'url("'){
+        src = src.substr(5);
+        src = src.substr(0,src.length-2);                 
+    }else{
+        src = src.substr(4);
+        src = src.substr(0,src.length-1);  
+    }
+
+    return src;  
+};
+
+html2canvas.Util.getCSS = function(el, attribute){
+    // TODO: make this work   
+    /*
+    if (el.currentStyle) {
+        return el.currentStyle[attribute];		
+    } else if (window.getComputedStyle) {		
+        return document.defaultView.getComputedStyle(el,null).getPropertyValue(attribute);	
+    } else {
+        
+    }*/
+    return jQuery(el).css(attribute);
+};
+
+html2canvas.Util.Extend = function(options, defaults){
+    for (var key in options){              
+        if (options.hasOwnProperty(key)) {
+            defaults[key] = options[key];
+        }
+    }
+    return defaults;           
+}
+
 
     
 /*

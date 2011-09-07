@@ -11,6 +11,52 @@
         timeoutTimer,
         timer = date.getTime();
         
+        var preload = html2canvas.Preload(document.body, {
+            "complete": function(images){
+                
+                var queue = html2canvas.Parse(document.body, images);
+                console.log(queue);
+                  
+                var canvas = $(html2canvas.Renderer(queue));
+                var finishTime = new Date();
+         
+          
+                canvas.css('position','absolute')
+                .css('left',0).css('top',0);
+                $('body').append(canvas);
+                $(canvas).siblings().toggle();
+                
+           
+                
+                $(window).click(function(){
+                    if (!canvas.is(':visible')){
+                        $(canvas).toggle().siblings().toggle();  
+                        throwMessage("Canvas Render visible");
+                    } else{
+                        $(canvas).siblings().toggle();  
+                        $(canvas).toggle();
+                        throwMessage("Canvas Render hidden");
+                    }
+                    
+          
+                });
+                throwMessage('Screenshot created in '+ ((finishTime.getTime()-timer)/1000) + " seconds<br />",4000);
+                  
+            }
+        });
+       
+  
+       
+
+         
+
+      
+        /*
+        var date = new Date();
+        var message,
+        timeoutTimer,
+        timer = date.getTime();
+        
         var object = $.extend({},{
             logging: false,
             proxyUrl: "http://html2canvas.appspot.com/", // running html2canvas-python proxy
@@ -54,6 +100,7 @@
         
         new html2canvas(this.get(0), object);
         
+         */
         
         function throwMessage(msg,duration){
             
@@ -84,5 +131,6 @@
         }
 
     };
+   
 })( jQuery );
 	

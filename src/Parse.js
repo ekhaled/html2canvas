@@ -398,7 +398,7 @@ html2canvas.Parse = function(element, images, opts){
         returnObj.left = left;
     
 
-          
+           
         return returnObj;
          
     }

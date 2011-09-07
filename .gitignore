@@ -2,8 +2,10 @@
 /images/
 /tests/templates/
 /tests/cache/
+/lib/
 /dist/
 /build/tmp.js
+/build/html2canvas.min.js
 index.html
 image.jpg
 screenshots_local.html

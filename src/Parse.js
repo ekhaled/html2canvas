@@ -1,7 +1,7 @@
 /*
  *  New function for traversing elements
  */
-
+ 
 html2canvas.Parse = function(element, images, opts){
   
     opts = opts || {};

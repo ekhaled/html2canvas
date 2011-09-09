@@ -2,12 +2,12 @@
  *  New function for traversing elements
  */
 
-html2canvas.Parse = function(element, images, opts){
-  
+html2canvas.Parse = function (element, images, opts) {
+ 
     opts = opts || {};
   
     // select body by default
-    if (element === undefined){
+    if (element === undefined) {
         element = document.body;
     }
     
@@ -25,31 +25,43 @@ html2canvas.Parse = function(element, images, opts){
     needReorder = false,
     numDraws = 0,
     fontData = {},
-    ignoreElementsRegExp = new RegExp("("+options.ignoreElements+")");
+    ignoreElementsRegExp = new RegExp("(" + options.ignoreElements + ")"),
+    body = document.body,
+    r,
+    testElement,
+    rangeBounds,
+    rangeHeight,
+    stack, 
+    ctx,
+    rootStack = new html2canvas.canvasContext(),
+    i,
+    children,
+    childrenLen;
     
+
     images = images || [];
     
     // Test whether we can use ranges to measure bounding boxes
     // Opera doesn't provide valid bounds.height/bottom even though it supports the method.
 
     
-    if (document.createRange){
-        var r = document.createRange();
+    if (document.createRange) {
+        r = document.createRange();
         //this.support.rangeBounds = new Boolean(r.getBoundingClientRect);
         if (r.getBoundingClientRect){
-            var testElement = document.createElement('boundtest');
+            testElement = document.createElement('boundtest');
             testElement.style.height = "123px";
             testElement.style.display = "block";
-            document.getElementsByTagName('body')[0].appendChild(testElement);
+            body.appendChild(testElement);
             
             r.selectNode(testElement);
-            var rangeBounds = r.getBoundingClientRect();
-            var rangeHeight = rangeBounds.height;
+            rangeBounds = r.getBoundingClientRect();
+            rangeHeight = rangeBounds.height;
 
-            if (rangeHeight==123){
+            if (rangeHeight === 123) {
                 support.rangeBounds = true;
             }
-            document.getElementsByTagName('body')[0].removeChild(testElement);
+            body.removeChild(testElement);
 
             
         }
@@ -66,13 +78,361 @@ html2canvas.Parse = function(element, images, opts){
     this.parseElement(this.element,stack);  
      */
 
+
+    function getCSS (element, attribute, intOnly) {
+        
+        if (intOnly !== undefined && intOnly === true) {
+            return parseInt(html2canvas.Util.getCSS(element, attribute), 10); 
+        }else{
+            return html2canvas.Util.getCSS(element, attribute);
+        }
+    }
+
+    // Drawing a rectangle
+    function renderRect (ctx, x, y, w, h, bgcolor) {
+        if (bgcolor !=="transparent"){
+            ctx.setVariable("fillStyle", bgcolor);
+            ctx.fillRect (x, y, w, h);
+            numDraws+=1;
+        }
+    }
+    
+    
+    function getBounds (el) {
+        
+        window.scroll(0,0);
+        var clientRect,
+        bounds = {},
+        p;
+        
+        if (el.getBoundingClientRect){	
+            clientRect = el.getBoundingClientRect();
+
+            
+            // TODO add scroll position to bounds, so no scrolling of window necessary
+            bounds.top = clientRect.top;
+            bounds.bottom = clientRect.bottom || (clientRect.top + clientRect.height);
+            bounds.left = clientRect.left;
+            bounds.width = clientRect.width;
+            bounds.height = clientRect.height;
+    
+            return bounds;
+            
+        }else{
+            
+            // TODO remove jQuery dependancy
+            p = $(el).offset();       
+          
+            return {               
+                left: p.left + getCSS(el,"borderLeftWidth", true),
+                top: p.top + getCSS(el,"borderTopWidth", true),
+                width:$(el).innerWidth(),
+                height:$(el).innerHeight()                
+            };
+
+        }           
+    }
+    
+    function textTransform (text, transform) {
+        switch(transform){
+            case "lowercase":
+                return text.toLowerCase();     
+					
+            case "capitalize":
+                return text.replace( /(^|\s|:|-|\(|\))([a-z])/g , function (m,p1,p2) {
+                    return p1+p2.toUpperCase();
+                } );            
+					
+            case "uppercase":
+                return text.toUpperCase();
+                
+            default:
+                return text;
+				
+        }
+        
+    }
+    
+    function trimText (text) {
+        return text.replace(/^\s*/g, "").replace(/\s*$/g, "");
+    }
+    
+    function fontMetrics (font, fontSize) {
+    
+        if (fontData[font+"-"+fontSize] !== undefined) {
+            return fontData[font+"-"+fontSize];
+        }
+
+    
+        var container = document.createElement('div'),
+        img = document.createElement('img'),
+        span = document.createElement('span'),
+        baseline,
+        middle,
+        metricsObj;
+        
+        
+        container.style.visibility = "hidden";
+        container.style.fontFamily = font;
+        container.style.fontSize = fontSize;
+        container.style.margin = 0;
+        container.style.padding = 0;
+
+        body.appendChild(container);
+        
+
+
+    
+        // TODO add another image
+        img.src = "http://html2canvas.hertzen.com/images/8.jpg";
+        img.width = 1;
+        img.height = 1;
+    
+        img.style.margin = 0;
+        img.style.padding = 0;
+
+        span.style.fontFamily = font;
+        span.style.fontSize = fontSize;
+        span.style.margin = 0;
+        span.style.padding = 0;
+        
+ 
+    
+    
+        span.appendChild(document.createTextNode('Hidden Text'));
+        container.appendChild(span);
+        container.appendChild(img);
+        baseline = (img.offsetTop - span.offsetTop) + 1;
+    
+        container.removeChild(span);
+        container.appendChild(document.createTextNode('Hidden Text'));
+    
+        container.style.lineHeight = "normal";
+        img.style.verticalAlign = "super";
+        
+        middle = (img.offsetTop-container.offsetTop) + 1;
+        metricsObj = {
+            baseline: baseline,
+            lineWidth: 1,
+            middle: middle
+        };
+    
+    
+        fontData[font+"-"+fontSize] = metricsObj;
+        
+        body.removeChild(container);
+
+        return metricsObj;
+    
+    }
+    
+        
+    function drawText(currentText, x, y, ctx){       
+        if (trimText(currentText).length>0) {	
+            ctx.fillText(currentText,x,y);
+            numDraws+=1;
+        }           
+    }
+    
+    
+    function renderText(el, textNode, stack){
+        var ctx = stack.ctx,
+        family = getCSS(el, "fontFamily", false),
+        size = getCSS(el, "fontSize", false),
+        color = getCSS(el, "color", false),
+        text_decoration = getCSS(el, "textDecoration", false),
+        text_align = getCSS(el, "textAlign", false),
+        letter_spacing = getCSS(el, "letterSpacing", false),
+        bounds,
+        text,
+        metrics,
+        renderList,
+        bold = getCSS(el, "fontWeight", false),
+        font_style = getCSS(el, "fontStyle", false),
+        font_variant = getCSS(el, "fontVariant", false),
+        align = false,
+        newTextNode,
+        textValue,
+        textOffset = 0,
+        oldTextNode,
+        c,
+        range,
+        parent,
+        wrapElement,
+        backupText;
+
+        // apply text-transform:ation to the text
+        
+        
+        
+        textNode.nodeValue = textTransform(textNode.nodeValue, getCSS(el, "textTransform", false));	
+        text = trimText(textNode.nodeValue);
+	
+        //text = $.trim(text);
+        if (text.length>0){
+
+            
+            
+            if (text_decoration !== "none"){
+                metrics = fontMetrics(family, size);         
+            }    
+        
+            
+            text_align = text_align.replace(["-webkit-auto"],["auto"]);
+        
+        
+            /* TODO Really shouldn't be modifying the contents nodeValues, but until can sort out a better way of fixing positioning
+               on elements which have white space at the beginning, will go with this.
+             */ 
+             
+            
+            //   textNode.nodeValue = trimText(textNode.nodeValue);
+            
+            
+            
+            if (options.letterRendering === false && /^(left|right|justify|auto)$/.test(text_align) && /^(normal|none)$/.test(letter_spacing)){
+                // this.setContextVariable(ctx,"textAlign",text_align);  
+                renderList = textNode.nodeValue.split(/(\b| )/);
+           
+            }else{
+                //  this.setContextVariable(ctx,"textAlign","left");
+                renderList = textNode.nodeValue.split("");
+            }
+       
+ 
+          
+  
+           
+                
+            switch(parseInt(bold, 10)){
+                case 401:
+                    bold = "bold";
+                    break;
+                case 400:
+                    bold = "normal";
+                    break;
+            }
+  
+            ctx.setVariable("fillStyle", color);  
+            ctx.setVariable("font", font_variant+" "+bold+" "+font_style+" "+size+" "+family);
+                
+            if (align){
+                ctx.setVariable("textAlign", "right");
+            }else{
+                ctx.setVariable("textAlign", "left");
+            }
+
+        
+            /*
+        if (stack.clip){
+        ctx.rect (stack.clip.left, stack.clip.top, stack.clip.width, stack.clip.height);
+        ctx.clip();
+        }
+             */
+       
+      
+            oldTextNode = textNode;
+           
+            
+            for(c=0; c < renderList.length; c+=1){
+                
+    
+           
+                if (text_decoration !== "none" || trimText(renderList[c]).length !== 0){
+                
+                    //      console.log('"'+oldTextNode.nodeValue+'"');
+                    
+
+                    if (support.rangeBounds){
+                        // getBoundingClientRect is supported for ranges
+                        textValue = renderList[c];
+                        if (document.createRange){
+                            range = document.createRange();
+
+                            range.setStart(textNode, textOffset);
+                            range.setEnd(textNode, textOffset + textValue.length);
+                        }else{
+                            // TODO add IE support
+                            range = body.createTextRange();
+                        }
+                        
+                        if (range.getBoundingClientRect()){
+                            bounds = range.getBoundingClientRect();
+                        }else{
+                            bounds = {};
+                        }
+                    }else{
+                        // it isn't supported, so let's wrap it inside an element instead and the bounds there
+               
+                        // IE 9 bug
+                        if (typeof oldTextNode.nodeValue !== "string" ){
+                            continue;
+                        }
+               
+                        newTextNode = oldTextNode.splitText(renderList[c].length);
+               
+                        parent = oldTextNode.parentNode;
+                        wrapElement = document.createElement('wrapper');
+                        backupText = oldTextNode.cloneNode(true);
+                        
+                        wrapElement.appendChild(oldTextNode.cloneNode(true));
+                        parent.replaceChild(wrapElement, oldTextNode);
+                                    
+                        bounds = getBounds(wrapElement);
+                        
+                        textValue = oldTextNode.nodeValue;
+                        
+                        oldTextNode = newTextNode;
+                        parent.replaceChild(backupText,wrapElement);      
+                    }
+               
+               
+       
+
+                    //   console.log(range);
+                    //      console.log("'"+oldTextNode.nodeValue+"'"+bounds.left)
+                    drawText(textValue, bounds.left, bounds.bottom, ctx);
+                    
+                    switch(text_decoration) {
+                        case "underline":	
+                            // Draws a line at the baseline of the font
+                            // TODO As some browsers display the line as more than 1px if the font-size is big, need to take that into account both in position and size         
+                            renderRect(ctx, bounds.left, Math.round(bounds.top + metrics.baseline + metrics.lineWidth), bounds.width, 1, color);
+                            break;
+                        case "overline":
+                            renderRect(ctx, bounds.left, bounds.top, bounds.width, 1, color);
+                            break;
+                        case "line-through":
+                            // TODO try and find exact position for line-through
+                            renderRect(ctx, bounds.left, Math.ceil(bounds.top+metrics.middle + metrics.lineWidth), bounds.width, 1, color);
+                            break;
+                    
+                    }	
+                
+                }
+            
+              
+                  
+                textOffset += renderList[c].length;
+                  
+            }
+        
+         
+					
+        }
+			
+    }
+   
+    
     function loadImage (src){	     
         
-        var imgIndex = -1;
+        var imgIndex = -1, 
+        i,
+        imgLen;
         if (images.indexOf){
             imgIndex = images.indexOf(src);
         }else{
-            for(var i = 0, imgLen = images.length; i < imgLen.length; i++){
+            for(i = 0, imgLen = images.length; i < imgLen.length; i+=1){
                 if(images[i] === src) {
                     imgIndex = i;
                     break;
@@ -91,140 +451,24 @@ html2canvas.Parse = function(element, images, opts){
     }
     
     
-    function fontMetrics(font, fontSize){
-    
-        if (fontData[font+"-"+fontSize] !== undefined){
-            return fontData[font+"-"+fontSize];
-        }
 
-    
-        var container = document.createElement('div');
-        document.getElementsByTagName('body')[0].appendChild(container);
-    
-        // jquery to speed this up, TODO remove jquery dependancy
-        $(container).css({
-            visibility:'hidden',
-            fontFamily:font,
-            fontSize:fontSize,
-            margin:0,
-            padding:0
-        });
-    
 
-    
-        var img = document.createElement('img');
-    
-        // TODO add another image
-        img.src = "http://html2canvas.hertzen.com/images/8.jpg";
-        img.width = 1;
-        img.height = 1;
-    
-        $(img).css({
-            margin:0,
-            padding:0
-        });
-        var span = document.createElement('span');
-    
-        $(span).css({
-            fontFamily:font,
-            fontSize:fontSize,
-            margin:0,
-            padding:0
-        });
-    
-    
-        span.appendChild(document.createTextNode('Hidden Text'));
-        container.appendChild(span);
-        container.appendChild(img);
-        var baseline = (img.offsetTop-span.offsetTop)+1;
-    
-        container.removeChild(span);
-        container.appendChild(document.createTextNode('Hidden Text'));
-    
-        $(container).css('line-height','normal');
-        $(img).css("vertical-align","super");
-        var middle = (img.offsetTop-container.offsetTop)+1;  
-    
-        var metricsObj = {
-            baseline: baseline,
-            lineWidth: 1,
-            middle: middle
-        };
-    
-    
-        fontData[font+"-"+fontSize] = metricsObj;
-    
-        $(container).remove();
  
     
-        return metricsObj;
-    
-    }
-    
-    function textTransform(text, transform){
-        switch(transform){
-            case "lowercase":
-                return text.toLowerCase();
-                break;
-					
-            case "capitalize":
-                return text.replace( /(^|\s|:|-|\(|\))([a-z])/g , function(m,p1,p2){
-                    return p1+p2.toUpperCase();
-                } );
-                break;
-					
-            case "uppercase":
-                return text.toUpperCase();
-                break;
-            default:
-                return text;
-				
-        }
-        
-    }
-    
-    function trimText(text){
-        return text.replace(/^\s*/, "").replace(/\s*$/, "");
-    }
-    
-    function drawText(currentText, x, y, ctx){
-        if (trimText(currentText).length>0){	
-        
-            ctx.fillText(currentText,x,y);
-            numDraws++;
-        }           
-    }
-    
-    function getBounds(el) {
-        
-        window.scroll(0,0);
-        
-        if (el.getBoundingClientRect){	
-            var clientRect = el.getBoundingClientRect();
-            
-            var bounds = {};
-            // TODO add scroll position to bounds, so no scrolling of window necessary
-            bounds.top = clientRect.top;
-            bounds.bottom = clientRect.bottom || (clientRect.top + clientRect.height);
-            bounds.left = clientRect.left;
-            bounds.width = clientRect.width;
-            bounds.height = clientRect.height;
-    
-            return bounds;
-            
-        }else{
-            
-            // TODO remove jQuery dependancy
-            var p = $(el).offset();       
-          
-            return {               
-                left: p.left + getCSS(el,"borderLeftWidth", true),
-                top: p.top + getCSS(el,"borderTopWidth", true),
-                width:$(el).innerWidth(),
-                height:$(el).innerHeight()                
-            }
-
-        }           
+    function clipBounds(src, dst){
+ 
+        var x = Math.max(src.left, dst.left),
+        y = Math.max(src.top, dst.top),
+        x2 = Math.min((src.left + src.width), (dst.left + dst.width)),
+        y2 = Math.min((src.top + src.height), (dst.top + dst.height));
+ 
+        return {
+            left:x,
+            top:y,
+            width:x2-x,
+            height:y2-y
+        };
+ 
     }
     
     function setZ(zIndex, position, parentZ, parentNode){
@@ -261,22 +505,28 @@ html2canvas.Parse = function(element, images, opts){
 
     
     function renderBorders(el, ctx, bounds, clip){
-    
+     
+        /*
+         *  TODO add support for different border-style's than solid   
+         */     
     
         var x = bounds.left,
         y = bounds.top,
         w = bounds.width,
-        h = bounds.height;
-    
-        /*
-         *  TODO add support for different border-style's than solid   
-         */            
-        
-        var borders = (function(el){
+        h = bounds.height,
+        borderSide,
+        borderData,
+        bx,
+        by,
+        bw,
+        bh,
+        borderBounds,
+        borders = (function(el){
             var borders = [],
-            sides = ["Top","Right","Bottom","Left"];
+            sides = ["Top","Right","Bottom","Left"],
+            s;
         
-            for (var s = 0; s < 4; s++){
+            for (s = 0; s < 4; s+=1){
                 borders.push({
                     width: getCSS(el, 'border' + sides[s] + 'Width', true),
                     color: getCSS(el, 'border' + sides[s] + 'Color', false)
@@ -292,13 +542,13 @@ html2canvas.Parse = function(element, images, opts){
 
     
     
-        for (var borderSide = 0, borderData; borderSide < 4; borderSide++){
+        for (borderSide = 0; borderSide < 4; borderSide+=1){
             borderData = borders[borderSide];
                 
             if (borderData.width>0){
-                var bx = x,
-                by = y,
-                bw = w,
+                bx = x;
+                by = y;
+                bw = w;
                 bh = h - (borders[2].width);
                 
                 switch(borderSide){
@@ -322,7 +572,7 @@ html2canvas.Parse = function(element, images, opts){
                         break;
                 }		
                    
-                var borderBounds = {
+                borderBounds = {
                     left:bx,
                     top:by,
                     width: bw,
@@ -330,13 +580,12 @@ html2canvas.Parse = function(element, images, opts){
                 };
                    
                 if (clip){
-                    borderBounds = _.clipBounds(borderBounds,clip);
+                    borderBounds = clipBounds(borderBounds, clip);
                 }
                    
                    
-                if (borderBounds.width>0 && borderBounds.height>0){       
-                    
-                    renderRect(ctx,bx,by,borderBounds.width,borderBounds.height,borderData.color);
+                if (borderBounds.width>0 && borderBounds.height>0){                           
+                    renderRect(ctx, bx, by, borderBounds.width, borderBounds.height, borderData.color);
                 }
                 
           
@@ -345,38 +594,80 @@ html2canvas.Parse = function(element, images, opts){
 
         return borders;
     
-    };
-    
-    // Drawing a rectangle 								
-    function renderRect(ctx, x, y, w, h, bgcolor){
-        if (bgcolor !=="transparent"){
-            ctx.setVariable("fillStyle", bgcolor);
-            ctx.fillRect (x, y, w, h);
-            numDraws++;
-        }
     }
+    
+    
+    function renderFormValue (el, bounds, stack){
+    
+        var valueWrap = document.createElement('valuewrap'),
+        cssArr = ['lineHeight','textAlign','fontFamily','color','fontSize','paddingLeft','paddingTop','width','height','border','borderLeftWidth','borderTopWidth'],
+        i,
+        textValue,
+        textNode,
+        arrLen,
+        style;
+        
+        for (i = 0, arrLen = cssArr.length; i < arrLen; i+=1){
+            style = cssArr[i];
+            valueWrap.style[style] = getCSS(el, style, false);
+        }
+        
+                
+        valueWrap.style.borderColor = "black";            
+        valueWrap.style.borderStyle = "solid";  
+        valueWrap.style.display = "block";
+        valueWrap.style.position = "absolute";
+        if (/^(submit|reset|button|text|password)$/.test(el.type) || el.nodeName === "SELECT"){
+            valueWrap.style.lineHeight = getCSS(el, "height", false);
+        }
+  
+                
+        valueWrap.style.top = bounds.top + "px";
+        valueWrap.style.left = bounds.left + "px";
+        
+        if (el.nodeName === "SELECT"){
+            // TODO increase accuracy of text position
+            textValue = el.options[el.selectedIndex].text;
+        } else{   
+            textValue = el.value;   
+        }
+        textNode = document.createTextNode(textValue);
+    
+        valueWrap.appendChild(textNode);
+        body.appendChild(valueWrap);
+        
+                
+        renderText(el, textNode, stack);
+        body.removeChild(valueWrap);        
+  
+   
+    
+    }
+    
+
     
     function getBackgroundPosition(el, bounds, image){
         // TODO add support for multi image backgrounds
     
-        var bgpos = getCSS(el, "backgroundPosition").split(",")[0] || "0 0";
-        // var bgpos = $(el).css("backgroundPosition") || "0 0";
-        var bgposition = bgpos.split(" "),
+        var bgpos = getCSS(el, "backgroundPosition").split(",")[0] || "0 0",
+        bgposition = bgpos.split(" "),
         topPos,
         left,
-        percentage;
+        percentage,
+        val;
 
         if (bgposition.length === 1){
-            var val = bgposition;
-            bgposition = []
+            val = bgposition;
+            
+            bgposition = [];
         
-            bgposition[0] = val,
+            bgposition[0] = val;
             bgposition[1] = val;
         }  
 
     
 
-        if (bgposition[0].toString().indexOf("%")!=-1){    
+        if (bgposition[0].toString().indexOf("%") !== -1){    
             percentage = (parseFloat(bgposition[0])/100);        
             left =  ((bounds.width * percentage)-(image.width*percentage));
       
@@ -384,166 +675,25 @@ html2canvas.Parse = function(element, images, opts){
             left = parseInt(bgposition[0],10);
         }
 
-        if (bgposition[1].toString().indexOf("%")!=-1){  
+        if (bgposition[1].toString().indexOf("%") !== -1){  
 
             percentage = (parseFloat(bgposition[1])/100);     
             topPos =  ((bounds.height * percentage)-(image.height*percentage));
         }else{      
             topPos = parseInt(bgposition[1],10);      
         }
-   
-        var returnObj = {}
-  
-        returnObj.top = topPos;
-        returnObj.left = left;
+
     
 
            
-        return returnObj;
+        return {
+            top: topPos,
+            left: left
+        };
          
     }
     
-    function renderBackground(el,bounds,ctx){
-               
-        // TODO add support for multi background-images
-        var background_image = getCSS(el, "backgroundImage", false).split(",")[0];
-        var background_repeat = getCSS(el, "backgroundRepeat", false).split(",")[0];
-        
-        if (typeof background_image !== "undefined" && /^(1|none)$/.test(background_image)===false && /^(-webkit|-moz|linear-gradient|-o-)/.test(background_image)===false){
-         
-            background_image = backgroundUrl(background_image);
-            var image = loadImage(background_image);
-					
-
-            var bgp = getBackgroundPosition(el, bounds, image),
-            bgy;
-
-            if (image){
-                switch(background_repeat){
-					
-                    case "repeat-x":
-                        renderBackgroundRepeatX(ctx,image,bgp,bounds.left,bounds.top,bounds.width,bounds.height);                     
-                        break;
-                         
-                    case "repeat-y":
-                        renderBackgroundRepeatY(ctx,image,bgp,bounds.left,bounds.top,bounds.width,bounds.height);                                             
-                        break;
-                          
-                    case "no-repeat":
-                        /*
-                    this.drawBackgroundRepeat(
-                        ctx,
-                        image,
-                        bgp.left+bounds.left, // sx
-                        bgp.top+bounds.top, // sy
-                        Math.min(bounds.width,image.width),
-                        Math.min(bounds.height,image.height),
-                        bounds.left,
-                        bounds.top
-                        );*/
-                            
-      
-                        // console.log($(el).css('background-image'));
-                        var bgw = bounds.width-bgp.left,
-                        bgh = bounds.height-bgp.top,
-                        bgsx = bgp.left,
-                        bgsy = bgp.top,
-                        bgdx = bgp.left+bounds.left,
-                        bgdy = bgp.top+bounds.top;
-
-                        //
-                        //     bgw = Math.min(bgw,image.width);
-                        //  bgh = Math.min(bgh,image.height);     
-                    
-                        if (bgsx<0){
-                            bgsx = Math.abs(bgsx);
-                            bgdx += bgsx; 
-                            bgw = Math.min(bounds.width,image.width-bgsx);
-                        }else{
-                            bgw = Math.min(bgw,image.width);
-                            bgsx = 0;
-                        }
-                           
-                        if (bgsy<0){
-                            bgsy = Math.abs(bgsy);
-                            bgdy += bgsy; 
-                            // bgh = bgh-bgsy;
-                            bgh = Math.min(bounds.height,image.height-bgsy);
-                        }else{
-                            bgh = Math.min(bgh,image.height); 
-                            bgsy = 0;
-                        }    
-    
-                  
-                        //   bgh = Math.abs(bgh);
-                        //   bgw = Math.abs(bgw);
-                        if (bgh>0 && bgw > 0){        
-                            renderImage(
-                                ctx,
-                                image,
-                                bgsx, // source X : 0 
-                                bgsy, // source Y : 1695
-                                bgw, // source Width : 18
-                                bgh, // source Height : 1677
-                                bgdx, // destination X :906
-                                bgdy, // destination Y : 1020
-                                bgw, // destination width : 18
-                                bgh // destination height : 1677
-                                );
-                            
-                            // ctx.drawImage(image,(bounds.left+bgp.left),(bounds.top+bgp.top));	                      
-                            break;
-                        }
-                        
-                    default:
-                        var height,
-                        add;
-                        
-                              
-                        bgp.top = bgp.top-Math.ceil(bgp.top/image.height)*image.height;                
-                        
-                        
-                        for(bgy=(bounds.top+bgp.top);bgy<bounds.height+bounds.top;){  
-           
-                        
-           
-                            var h = Math.min(image.height,(bounds.height+bounds.top)-bgy);
-                           
-                            
-                            if ( Math.floor(bgy+image.height)>h+bgy){
-                                height = (h+bgy)-bgy;
-                            }else{
-                                height = image.height;
-                            }
-                            // console.log(height);
-                            
-                            if (bgy<bounds.top){
-                                add = bounds.top-bgy;
-                                bgy = bounds.top;
-                                
-                            }else{
-                                add = 0;
-                            }
-                                              
-                            renderBackgroundRepeatX(ctx,image,bgp,bounds.left,bgy,bounds.width,height);  
-                            if (add>0){
-                                bgp.top += add;
-                            }
-                            bgy = Math.floor(bgy+image.height)-add; 
-                        }
-                        break;
-                        
-					
-                }	
-            }else{
-                    
-                html2canvas.log("Error loading background:" + background_image);
-            //console.log(images);
-            }
-					
-        }
-    }
-    function renderImage(ctx, image, sx, sy, sw, sh, dx, dy, dw, dh){
+    function renderImage (ctx, image, sx, sy, sw, sh, dx, dy, dw, dh) {
         ctx.drawImage(
             image,
             sx, //sx
@@ -555,10 +705,11 @@ html2canvas.Parse = function(element, images, opts){
             dw, //dw
             dh //dh      
             );
-        numDraws++; 
+        numDraws+=1; 
     
     }
-        
+
+            
     function renderBackgroundRepeat (ctx, image, x, y, width, height, elx, ely){
         var sourceX = 0,
         sourceY=0;
@@ -617,7 +768,7 @@ html2canvas.Parse = function(element, images, opts){
         bgp.left = bgp.left-Math.ceil(bgp.left/image.width)*image.width;                
         
         
-        for(bgx=(x+bgp.left);bgx<w+x;){   
+        for (bgx=(x+bgp.left);bgx<w+x;) {   
 
             if (Math.floor(bgx+image.width)>w+x){
                 width = (w+x)-bgx;
@@ -632,178 +783,161 @@ html2canvas.Parse = function(element, images, opts){
                                 
         } 
     }
-
-    function renderText(el, textNode, stack, form){
-        var ctx = stack.ctx;
-        var family = getCSS(el, "fontFamily", false);
-        var size = getCSS(el, "fontSize", false);
-        var color = getCSS(el, "color", false);
-  
-
-     
-        var text_decoration = getCSS(el, "textDecoration", false);
-        var text_align = getCSS(el, "textAlign", false);  
     
-    
-        var letter_spacing = getCSS(el, "letterSpacing", false);
-
-        // apply text-transform:ation to the text
+    function renderBackground(el,bounds,ctx){
+               
+        // TODO add support for multi background-images
+        var background_image = getCSS(el, "backgroundImage", false).split(",")[0],
+        background_repeat = getCSS(el, "backgroundRepeat", false).split(",")[0],
+        image,
+        bgp,
+        bgy,
+        bgw,
+        bgsx,
+        bgsy,
+        bgdx,
+        bgdy,
+        bgh,
+        h,
+        height,
+        add;
         
-        
-        
-        textNode.nodeValue = textTransform(textNode.nodeValue, getCSS(el, "textTransform", false));	
-        var text = trimText(textNode.nodeValue);
-	
-        //text = $.trim(text);
-        if (text.length>0){
-
-            
-            
-            if (text_decoration !== "none"){
-                var metrics = fontMetrics(family, size);         
-            }    
-        
-            var renderList,
-            renderWords = false;
-        
-        	
-            text_align = text_align.replace(["-webkit-auto"],["auto"])
-        
-        
-            if (options.letterRendering === false && /^(left|right|justify|auto)$/.test(text_align) && /^(normal|none)$/.test(letter_spacing)){
-                // this.setContextVariable(ctx,"textAlign",text_align);  
-                renderWords = true;
-                renderList = textNode.nodeValue.split(/(\b| )/);
-            
-            }else{
-                //  this.setContextVariable(ctx,"textAlign","left");
-                renderList = textNode.nodeValue.split("");
-            }
-       
-
-  
-            var bold = getCSS(el, "fontWeight", false),
-            font_style = getCSS(el, "fontStyle", false),
-            font_variant = getCSS(el, "fontVariant", false),
-            align = false; // sort this out at some point
-                
-            switch(parseInt(bold, 10)){
-                case 401:
-                    bold = "bold";
-                    break;
-                case 400:
-                    bold = "normal";
-                    break;
-            }
-  
-            ctx.setVariable("fillStyle", color);  
-            ctx.setVariable("font", font_variant+" "+bold+" "+font_style+" "+size+" "+family);
-                
-            if (align){
-                ctx.setVariable("textAlign","right");
-            }else{
-                ctx.setVariable("textAlign","left");
-            }
-    
-            
-            
-        
-
-        
-            /*
-        if (stack.clip){
-        ctx.rect (stack.clip.left, stack.clip.top, stack.clip.width, stack.clip.height);
-        ctx.clip();
-        }
-             */
-        
-
-            
+        if (typeof background_image !== "undefined" && /^(1|none)$/.test(background_image) === false && /^(-webkit|-moz|linear-gradient|-o-)/.test(background_image)===false){
          
-            var oldTextNode = textNode;
-            for(var c=0; c<renderList.length; c++){
-            
-                        
-                // IE 9 bug
-                if (typeof oldTextNode.nodeValue !== "string"){
-                    continue;
-                }
-                
-                // TODO only do the splitting for non-range prints
-                var newTextNode = oldTextNode.splitText(renderList[c].length);
-           
-                if (text_decoration !== "none" || trimText(oldTextNode.nodeValue).length !== 0){
-                
-               
-           
+            background_image = backgroundUrl(background_image);
+            image = loadImage(background_image);
+					
 
-                    if (support.rangeBounds){
-                        // getBoundingClientRect is supported for ranges
-                        var range, bounds;
-                        if (document.createRange){
-                            range = document.createRange();
-                            range.selectNode(oldTextNode);
+            bgp = getBackgroundPosition(el, bounds, image);
+            
+
+            if (image){
+                switch(background_repeat){
+					
+                    case "repeat-x":
+                        renderBackgroundRepeatX(ctx, image, bgp, bounds.left, bounds.top, bounds.width, bounds.height);                     
+                        break;
+                         
+                    case "repeat-y":
+                        renderBackgroundRepeatY(ctx, image, bgp, bounds.left, bounds.top, bounds.width, bounds.height);                                             
+                        break;
+                          
+                    case "no-repeat":
+                        /*
+                    this.drawBackgroundRepeat(
+                        ctx,
+                        image,
+                        bgp.left+bounds.left, // sx
+                        bgp.top+bounds.top, // sy
+                        Math.min(bounds.width,image.width),
+                        Math.min(bounds.height,image.height),
+                        bounds.left,
+                        bounds.top
+                        );*/
+                            
+      
+                        // console.log($(el).css('background-image'));
+                        bgw = bounds.width - bgp.left;
+                        bgh = bounds.height - bgp.top;
+                        bgsx = bgp.left;
+                        bgsy = bgp.top;
+                        bgdx = bgp.left+bounds.left;
+                        bgdy = bgp.top+bounds.top;
+
+                        //
+                        //     bgw = Math.min(bgw,image.width);
+                        //  bgh = Math.min(bgh,image.height);     
+                    
+                        if (bgsx<0){
+                            bgsx = Math.abs(bgsx);
+                            bgdx += bgsx; 
+                            bgw = Math.min(bounds.width,image.width-bgsx);
                         }else{
-                            // TODO add IE support
-                            range = document.body.createTextRange();
+                            bgw = Math.min(bgw,image.width);
+                            bgsx = 0;
                         }
-                        
-                        if (range.getBoundingClientRect()){
-                            bounds = range.getBoundingClientRect();
+                           
+                        if (bgsy<0){
+                            bgsy = Math.abs(bgsy);
+                            bgdy += bgsy; 
+                            // bgh = bgh-bgsy;
+                            bgh = Math.min(bounds.height,image.height-bgsy);
                         }else{
-                            bounds = {};
-                        }
-                    }else{
-                        // it isn't supported, so let's wrap it inside an element instead and the bounds there
-               
-                        var parent = oldTextNode.parentNode;
-                        var wrapElement = document.createElement('wrapper');
-                        var backupText = oldTextNode.cloneNode(true);
-                        wrapElement.appendChild(oldTextNode.cloneNode(true));
-                        parent.replaceChild(wrapElement,oldTextNode);
-                                    
-                        var bounds = this.getBounds(wrapElement);
+                            bgh = Math.min(bgh,image.height); 
+                            bgsy = 0;
+                        }    
     
-                        parent.replaceChild(backupText,wrapElement);      
-                    }
-               
-               
-       
-
-                    //   console.log(range);
-                    //      console.log("'"+oldTextNode.nodeValue+"'"+bounds.left)
-                    drawText(oldTextNode.nodeValue, bounds.left, bounds.bottom, ctx);
+                  
+                        //   bgh = Math.abs(bgh);
+                        //   bgw = Math.abs(bgw);
+                        if (bgh>0 && bgw > 0){        
+                            renderImage(
+                                ctx,
+                                image,
+                                bgsx, // source X : 0 
+                                bgsy, // source Y : 1695
+                                bgw, // source Width : 18
+                                bgh, // source Height : 1677
+                                bgdx, // destination X :906
+                                bgdy, // destination Y : 1020
+                                bgw, // destination width : 18
+                                bgh // destination height : 1677
+                                );
+                            
+                        // ctx.drawImage(image,(bounds.left+bgp.left),(bounds.top+bgp.top));	                      
+                            
+                        }
+                        break;
+                    default:
+                        
+                        
+                              
+                        bgp.top = bgp.top-Math.ceil(bgp.top/image.height)*image.height;                
+                        
+                        
+                        for(bgy=(bounds.top+bgp.top);bgy<bounds.height+bounds.top;){  
+           
+                        
+           
+                            h = Math.min(image.height,(bounds.height+bounds.top)-bgy);
+                           
+                            
+                            if ( Math.floor(bgy+image.height)>h+bgy){
+                                height = (h+bgy)-bgy;
+                            }else{
+                                height = image.height;
+                            }
+                            // console.log(height);
+                            
+                            if (bgy<bounds.top){
+                                add = bounds.top-bgy;
+                                bgy = bounds.top;
+                                
+                            }else{
+                                add = 0;
+                            }
+                                              
+                            renderBackgroundRepeatX(ctx,image,bgp,bounds.left,bgy,bounds.width,height);  
+                            if (add>0){
+                                bgp.top += add;
+                            }
+                            bgy = Math.floor(bgy+image.height)-add; 
+                        }
+                        break;
+                        
+					
+                }	
+            }else{
                     
-                    switch(text_decoration) {
-                        case "underline":	
-                            // Draws a line at the baseline of the font
-                            // TODO As some browsers display the line as more than 1px if the font-size is big, need to take that into account both in position and size         
-                            renderRect(ctx,bounds.left,Math.round(bounds.top+metrics.baseline+metrics.lineWidth),bounds.width,1,color);
-                            break;
-                        case "overline":
-                            renderRect(ctx,bounds.left,bounds.top,bounds.width,1,color);
-                            break;
-                        case "line-through":
-                            // TODO try and find exact position for line-through
-                            renderRect(ctx,bounds.left,Math.ceil(bounds.top+metrics.middle+metrics.lineWidth),bounds.width,1,color);
-                            break;
-                    
-                    }	
-                
-                }
-            
-                oldTextNode = newTextNode;
-                  
-                  
-                  
+                html2canvas.log("Error loading background:" + background_image);
+            //console.log(images);
             }
-        
-         
 					
         }
-			
     }
-    
+
+
+ 
     function renderElement(el, parentStack){
 		
         var bounds = getBounds(el), 
@@ -813,18 +947,30 @@ html2canvas.Parse = function(element, images, opts){
         h = bounds.height, 
         image,
         bgcolor = getCSS(el, "backgroundColor", false),
-        cssPosition = getCSS(el, "position", false);
+        cssPosition = getCSS(el, "position", false),
+        zindex,
+        opacity = getCSS(el, "opacity", false),
+        stack,
+        stackLength,
+        borders,
+        ctx,
+        bgbounds,
+        imgSrc,
+        paddingLeft,
+        paddingTop,
+        paddingRight,
+        paddingBottom;
+        
         
         parentStack = parentStack || {};
 
         //var zindex = this.formatZ(this.getCSS(el,"zIndex"),cssPosition,parentStack.zIndex,el.parentNode);
    
-        var zindex = setZ(getCSS(el, "zIndex", false), cssPosition, parentStack.zIndex, el.parentNode);
-    
-        var opacity = getCSS(el, "opacity");   
+        zindex = setZ(getCSS(el, "zIndex", false), cssPosition, parentStack.zIndex, el.parentNode);
+          
 
 
-        var stack = {
+        stack = {
             ctx: new html2canvas.canvasContext(),
             zIndex: zindex,
             opacity: opacity*parentStack.opacity,
@@ -841,23 +987,23 @@ html2canvas.Parse = function(element, images, opts){
         } 
  
  
-        if (options.useOverflow === true && /(hidden|scroll|auto)/.test(getCSS(el, "overflow")) === true && !/(BODY)/i.test(el.nodeName) === true){
+        if (options.useOverflow === true && /(hidden|scroll|auto)/.test(getCSS(el, "overflow")) === true && /(BODY)/i.test(el.nodeName) === false){
             if (stack.clip){
-                stack.clip = this.clipBounds(stack.clip,bounds);
+                stack.clip = clipBounds(stack.clip, bounds);
             }else{
                 stack.clip = bounds;
             }
         }   
 
 
-        var stackLength =  zindex.children.push(stack);
+        stackLength =  zindex.children.push(stack);
         
-        var ctx = zindex.children[stackLength-1].ctx; 
+        ctx = zindex.children[stackLength-1].ctx; 
     
         ctx.setVariable("globalAlpha", stack.opacity);  
 
         // draw element borders
-        var borders = renderBorders(el, ctx, bounds);
+        borders = renderBorders(el, ctx, bounds);
         stack.borders = borders;
     
         // let's modify clip area for child elements, so borders dont get overwritten
@@ -881,7 +1027,7 @@ html2canvas.Parse = function(element, images, opts){
                
         // draw base element bgcolor   
 
-        var bgbounds = {
+        bgbounds = {
             left: x + borders[3].width,
             top: y + borders[0].width,
             width: w - (borders[1].width + borders[3].width),
@@ -891,7 +1037,7 @@ html2canvas.Parse = function(element, images, opts){
         //if (this.withinBounds(stack.clip,bgbounds)){  
         
         if (stack.clip){
-            bgbounds = this.clipBounds(bgbounds,stack.clip);
+            bgbounds = clipBounds(bgbounds, stack.clip);
         
         //}    
     
@@ -912,17 +1058,17 @@ html2canvas.Parse = function(element, images, opts){
         
         switch(el.nodeName){
             case "IMG":
-                var imgSrc = el.getAttribute('src');
-                image = _.loadImage(imgSrc);
+                imgSrc = el.getAttribute('src');
+                image = loadImage(imgSrc);
                 if (image){
 
-                    var paddingLeft = getCSS(el, 'paddingLeft', true),
-                    paddingTop = getCSS(el, 'paddingTop', true),
-                    paddingRight = getCSS(el, 'paddingRight', true),
+                    paddingLeft = getCSS(el, 'paddingLeft', true);
+                    paddingTop = getCSS(el, 'paddingTop', true);
+                    paddingRight = getCSS(el, 'paddingRight', true);
                     paddingBottom = getCSS(el, 'paddingBottom', true);
                     
                     
-                    this.drawImage(
+                    renderImage(
                         ctx,
                         image,
                         0, //sx
@@ -944,7 +1090,7 @@ html2canvas.Parse = function(element, images, opts){
                 // todo add support for placeholder attribute for browsers which support it
                 if (/^(text|url|email|submit|button|reset)$/.test(el.type) && el.value.length > 0){
                 
-                    this.renderFormValue(el,bounds,stack);
+                    renderFormValue(el, bounds, stack);
                 
 
                 /*
@@ -962,12 +1108,12 @@ html2canvas.Parse = function(element, images, opts){
                 break;
             case "TEXTAREA":
                 if (el.value.length > 0){
-                    this.renderFormValue(el,bounds,stack);
+                    renderFormValue(el, bounds, stack);
                 }
                 break;
             case "SELECT":
                 if (el.options.length > 0){
-                    this.renderFormValue(el,bounds,stack);
+                    renderFormValue(el, bounds, stack);
                 }
                 break;
             case "LI":
@@ -981,17 +1127,9 @@ html2canvas.Parse = function(element, images, opts){
         return zindex.children[stackLength-1];
     }
     
+   
     
-    function getCSS(element, attribute, intOnly){
-        
-        if (intOnly !== undefined && intOnly === true){
-            return parseInt(html2canvas.Util.getCSS(element, attribute), 10); 
-        }else{
-            return html2canvas.Util.getCSS(element, attribute);
-        }
-    }
-    
-    function parseElement(el, stack){
+    function parseElement (el, stack) {
       
         // skip hidden elements and their children
         if (getCSS(el, 'display') !== "none" && getCSS(el, 'visibility') !== "hidden"){ 
@@ -1000,10 +1138,13 @@ html2canvas.Parse = function(element, images, opts){
           
             ctx = stack.ctx;
     
-            if (!ignoreElementsRegExp.test(el.nodeName)){
+            if (!ignoreElementsRegExp.test(el.nodeName)) {
                 // TODO remove jQuery
-                var elementChildren = $(el).contents();
-                for (var i = 0, childrenLen = elementChildren.length, node; i < childrenLen; i++){
+                var elementChildren = $(el).contents(),
+                i,
+                node,
+                childrenLen;
+                for (i = 0, childrenLen = elementChildren.length; i < childrenLen; i+=1) {
                     node = elementChildren[i];
                     
                     if (node.nodeType === 1){
@@ -1018,16 +1159,13 @@ html2canvas.Parse = function(element, images, opts){
         }
     }
     
-    var stack, ctx;
+
+    rootStack.opacity = getCSS(element, "opacity", false);
     
-    
-    var rootStack = new html2canvas.canvasContext($(document).width(),$(document).height());  
-    rootStack.opacity = getCSS(element,"opacity");
-    
-    var stack = renderElement(element, rootStack);
+    stack = renderElement(element, rootStack);
     
     // parse every child element
-    for (var i = 0, children = element.children, childrenLen = children.length; i < childrenLen; i++){      
+    for (i = 0, children = element.children, childrenLen = children.length; i < childrenLen; i+=1){      
         parseElement(children[i], stack);  
     }
     
@@ -1035,10 +1173,9 @@ html2canvas.Parse = function(element, images, opts){
 
 };
 
-html2canvas.zContext = function(zindex){
+html2canvas.zContext = function(zindex) {
     return {
         zindex: zindex,
         children: []
-    };
-    
-}
+    };  
+};

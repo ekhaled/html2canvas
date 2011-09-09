@@ -5,7 +5,11 @@ html2canvas.Preload = function(element, opts){
     },
     images = [],
     pageOrigin = window.location.protocol + window.location.host,
-    imagesLoaded = 0;
+    imagesLoaded = 0,
+    methods,
+    i,
+    domImages = element.ownerDocument.images, // TODO probably should limit it to images present in the element only
+    imgLen = domImages.length;
     
     opts = opts || {};
     
@@ -23,12 +27,14 @@ html2canvas.Preload = function(element, opts){
     }
     
     function getIndex(array,src){
-    
+        var i, arrLen;
         if (array.indexOf){
             return array.indexOf(src);
         }else{
-            for(var i = 0, arrLen = array.length; i < arrLen; i++){
-                if(this[i] === src) return i;
+            for(i = 0, arrLen = array.length; i < arrLen; i+=1){
+                if(this[i] === src) {
+                    return i;
+                }
             }
             return -1;
         }
@@ -51,7 +57,7 @@ html2canvas.Preload = function(element, opts){
     }
     
     function proxyGetImage(url, img){
-        var _ = this;
+     
     
         var link = document.createElement("a");
         link.href = url;
@@ -73,10 +79,10 @@ html2canvas.Preload = function(element, opts){
                     start();  
                 }else{
                     img.onload = function(){
-                        imagesLoaded++;               
+                        imagesLoaded+=1;               
                         start();   
                
-                    }     
+                    };     
                     img.src = a; 
                 }
 
@@ -99,8 +105,12 @@ html2canvas.Preload = function(element, opts){
         // if (!this.ignoreRe.test(el.nodeName)){
         // 
         // TODO remove jQuery dependancy
-        var contents = $(el).contents();
-        for (var i = 0, contentsLen = contents.length; i < contentsLen; i++ ){
+        var contents = $(el).contents(),
+        i,
+        contentsLen = contents.length,
+        background_image,
+        src;
+        for (i = 0;  i < contentsLen; i+=1 ){
             // var ignRe = new RegExp("("+this.ignoreElements+")");
             // if (!ignRe.test(element.nodeName)){
             getImages(contents[i]);
@@ -111,17 +121,17 @@ html2canvas.Preload = function(element, opts){
           
         if (el.nodeType === 1 || el.nodeType === undefined){
             
-            var background_image = html2canvas.Util.getCSS(el, 'backgroundImage');
+            background_image = html2canvas.Util.getCSS(el, 'backgroundImage');
            
             if (background_image && background_image !== "1" && background_image !== "none" && background_image.substring(0,7) !== "-webkit" && background_image.substring(0,3)!== "-o-" && background_image.substring(0,4) !== "-moz"){
                 // TODO add multi image background support
-                var src = html2canvas.Util.backgroundImage(background_image.split(",")[0]);                    
+                src = html2canvas.Util.backgroundImage(background_image.split(",")[0]);                    
                 methods.loadImage(src);                    
             }
         }
     }  
     
-    var methods = {
+    methods = {
         loadImage: function(src){
             var img;
             if (getIndex(images, src) === -1){
@@ -131,8 +141,8 @@ html2canvas.Preload = function(element, opts){
                     img = new Image();
                     img.src = src;
                     images.push(img);
-                    imagesLoaded++;               
-                    start(); 	
+                    imagesLoaded+=1;
+                    start();
                 }else if (isSameOrigin(src)){
             
                     images.push(src);
@@ -140,7 +150,7 @@ html2canvas.Preload = function(element, opts){
                     // TODO remove jQuery dependancy
 
                     $(img).load(function(){
-                        imagesLoaded++;               
+                        imagesLoaded+=1;               
                         start();        
                 
                     });	
@@ -148,7 +158,7 @@ html2canvas.Preload = function(element, opts){
                     img.onerror = function(){
                         images.splice(getIndex(images, img.src), 2);
                         start();                           
-                    }
+                    };
                     
                     img.src = src; 
                     images.push(img);
@@ -174,7 +184,7 @@ html2canvas.Preload = function(element, opts){
     
     
     // load <img> images
-    for (var i = 0, domImages = element.ownerDocument.images, imgLen = domImages.length; i < imgLen; i++){
+    for (i = 0; i < imgLen; i+=1){
         methods.loadImage(domImages[i].getAttribute("src"));
     }
     

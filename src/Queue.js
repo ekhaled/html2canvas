@@ -10,7 +10,7 @@ html2canvas.canvasContext = function(width, height){
         {
             type: "function",
             name:"fillRect",
-            arguments: [x,y,w,h]            
+            'arguments': [x,y,w,h]            
         });
         
     };
@@ -22,7 +22,7 @@ html2canvas.canvasContext = function(width, height){
         {
             type: "function",
             name:"drawImage",
-            arguments:[image,sx,sy,sw,sh,dx,dy,dw,dh]            
+            'arguments':[image,sx,sy,sw,sh,dx,dy,dw,dh]            
         });
     };
     
@@ -32,9 +32,9 @@ html2canvas.canvasContext = function(width, height){
         {
             type: "function",
             name:"fillText",
-            arguments:[currentText,x,y]            
+            'arguments':[currentText,x,y]            
         });      
-    }  
+    };  
     
     
     this.setVariable = function(variable, value){
@@ -42,10 +42,10 @@ html2canvas.canvasContext = function(width, height){
             {
                 type: "variable",
                 name: variable,
-                arguments: value            
+                'arguments': value            
             });
-    }
+    };
     
     return this;
     
-}
+};
